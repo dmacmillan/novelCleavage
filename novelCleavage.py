@@ -18,22 +18,22 @@ def parseSummary(summary):
 
 def parseKleat(kleat, 
                max_dist_ann = float('inf'), 
-               min_len_tail_contig = 0,
-               min_num_tail_reads = 0,
-               min_num_bridge_reads = 0,
-               min_bridge_read_tail_len = 0):
+               min_len_tail_contig = None,
+               min_num_tail_reads = None,
+               min_num_bridge_reads = None,
+               min_bridge_read_tail_len = None):
     results = []
     with open(kleat, 'r') as f:
         header = f.readline()
         for line in f:
             result = Kleat(*line.strip().split('\t'))
-            if (1 <= result.length_of_tail_in_contig < min_len_tail_contig):
+            if min_len_tail_contig and (0 <= result.length_of_tail_in_contig < min_len_tail_contig):
                 continue
-            elif (1 <= result.number_of_tail_reads < min_num_tail_reads):
+            elif min_num_tail_reads and (0 <= result.number_of_tail_reads < min_num_tail_reads):
                 continue
-            elif (1 <= result.number_of_bridge_reads < min_num_bridge_reads):
+            elif min_num_bridge_reads and (0 <= result.number_of_bridge_reads < min_num_bridge_reads):
                 continue
-            elif (1 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
+            elif min_bridge_read_tail_len and (0 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
                 continue
             elif (result.distance_from_annotated_site > max_dist_ann):
                 continue
@@ -151,7 +151,7 @@ print 'DONE'
 
 outfile = os.path.join(args.outdir, args.name)
 
-sprint('Writing to: {} ...').format(outfile)
+sprint('Writing to: {} ...'.format(outfile))
 with open(outfile, 'w') as o:
     o.write(('\t').join(['ID','CELL_LINE','TISSUE','DISEASE','CHROM','GENE','CLEAVAGE_SITE','GENE_START','GENE_END','TRANSCRIPT_ID','STRAND','DISTANCE']) + '\n')
     for clv_evnt, utr, my_min in sites:
