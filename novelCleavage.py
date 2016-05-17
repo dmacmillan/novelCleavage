@@ -16,12 +16,40 @@ def parseSummary(summary):
             results[line[11]] = [line[0], line[2], line[7]]
     return results
 
+def parseSimpleKleat(kleat,
+                     max_dist_ann = float('inf'), 
+                     min_len_tail_contig = None,
+                     min_num_tail_reads = None,
+                     min_num_bridge_reads = None,
+                     min_bridge_read_tail_len = None,
+                     has_pas = None):
+    results = []
+    with open(kleat, 'r') as f:
+        header = f.readline()
+        for line in f:
+            result = Kleat(*line.strip().split('\t'))
+            if (result.length_of_tail_in_contig < min_len_tail_contig):
+                if (result.number_of_bridge_reads < min_num_bridge_reads):
+                    continue
+            elif min_num_tail_reads and (0 <= result.number_of_tail_reads < min_num_tail_reads):
+                continue
+            elif min_bridge_read_tail_len and (0 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
+                continue
+            elif (result.distance_from_annotated_site > max_dist_ann):
+                continue
+            elif has_pas and not result.pas:
+                continue
+            result.ID = os.path.basename(kleat).split('.')[0]
+            results.append(result)
+    return results
+
 def parseKleat(kleat, 
                max_dist_ann = float('inf'), 
                min_len_tail_contig = None,
                min_num_tail_reads = None,
                min_num_bridge_reads = None,
-               min_bridge_read_tail_len = None):
+               min_bridge_read_tail_len = None,
+               has_pas = None):
     results = []
     with open(kleat, 'r') as f:
         header = f.readline()
@@ -36,6 +64,8 @@ def parseKleat(kleat,
             elif min_bridge_read_tail_len and (0 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
                 continue
             elif (result.distance_from_annotated_site > max_dist_ann):
+                continue
+            elif has_pas and not result.pas:
                 continue
             result.ID = os.path.basename(kleat).split('.')[0]
             results.append(result)
@@ -102,6 +132,7 @@ parser.add_argument('-l', '--min_len_tail_contig', type=int, default=0, help='Mi
 parser.add_argument('-t', '--min_num_tail_reads', type=int, default=0, help='Minimum number of tail reads. Default = 0')
 parser.add_argument('-b', '--min_num_bridge_reads', type=int, default=0, help='Minimum number of bridge reads. Default = 0')
 parser.add_argument('-bl', '--min_bridge_read_tail_len', type=int, default=0, help='Minimum length of each bridge read. Default = 0')
+parser.add_argument('-p', '--has_polyadenylation_signal', action='store_true', help='Filter out cleavage events that do not have a polyadenylation signal')
 #parser.add_argument('',help='')
 parser.add_argument('-n', '--name', default='novel.sites', help='Name for the file output. Default is "novel.sites"')
 parser.add_argument('-o', '--outdir', default=os.getcwd(), help='Path to output to. Default is "{}"'.format(os.getcwd()))
@@ -117,11 +148,18 @@ kleats = []
 N = len(args.kleat)
 for i,kleat in enumerate(args.kleat):
     sprint('Loading KLEAT {}/{} ...\r'.format(i+1,N))
-    kleats += parseKleat(kleat,
+#    kleats += parseKleat(kleat,
+#                         args.max_dist_ann,
+#                         args.min_len_tail_contig,
+#                         args.min_num_tail_reads,
+#                         args.min_num_bridge_reads,
+#                         has_pas = args.has_polyadenylation_signal)
+    kleats += parseSimpleKleat(kleat,
                          args.max_dist_ann,
                          args.min_len_tail_contig,
                          args.min_num_tail_reads,
-                         args.min_num_bridge_reads)
+                         args.min_num_bridge_reads,
+                         has_pas = args.has_polyadenylation_signal)
 print 'Loading KLEAT {}/{} ...DONE\r'.format(N,N)
 
 # Group KLEAT data
@@ -146,7 +184,7 @@ print 'DONE'
 
 # Find novel sites
 sprint('Finding novel sites ...')
-sites = findNovelCleavageEvents(kleats, ggtf, distance=20)
+sites = findNovelCleavageEvents(kleats, ggtf, distance=args.min_novel_distance)
 print 'DONE'
 
 outfile = os.path.join(args.outdir, args.name)

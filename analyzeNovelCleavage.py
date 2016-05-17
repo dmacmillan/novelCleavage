@@ -71,7 +71,7 @@ def analyzeNovel(novel, distance=20):
                                 match = True
                                 break
                         if not match:
-                            print '{}\t{}\t{}\t{}'.format(site.cell_line_name, site.sample_id, site.tissue_site, site.cleavage_site)
+                            print '{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(site.chrom, site.gene, site.cell_line_name, site.sample_id, site.tissue_site, site2.tissue_site, site.cleavage_site)
 
 parser = argparse.ArgumentParser(description='')
 
