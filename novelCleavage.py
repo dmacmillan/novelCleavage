@@ -33,7 +33,7 @@ def parseSimpleKleat(kleat,
                     continue
             elif min_num_tail_reads and (0 <= result.number_of_tail_reads < min_num_tail_reads):
                 continue
-            elif min_bridge_read_tail_len and (0 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
+            elif min_bridge_read_tail_len and result.number_of_bridge_reads > 0 and (0 <= result.max_bridge_read_tail_length < min_bridge_read_tail_len):
                 continue
             elif (result.distance_from_annotated_site > max_dist_ann):
                 continue
@@ -107,7 +107,7 @@ def findNovelCleavageEvents(kleats_grouped, gtf_grouped, distance=20):
                     results.append([kg[chrom][gene][i], closest_utr, my_min])
     return results
 
-def groupNoMergeGTF(gtf):
+def groupEnsemblGTF(gtf):
     result = {}
     for g in gtf:
         if g.seqname not in result:
@@ -116,6 +116,21 @@ def groupNoMergeGTF(gtf):
             result[g.seqname][g.attribute['gene_name']] = [g]
         else:
             result[g.seqname][g.attribute['gene_name']].append(g)
+    #for chrom in result:
+    #    for gene in result[chrom]:
+    #        result[chrom][gene].sort(key=lambda x: x.start)
+    return result
+
+def groupAceviewGTF(gtf, result=None):
+    if not result:
+        result = {}
+    for g in gtf:
+        if g.seqname not in result:
+            result[g.seqname] = {g.attribute['gene_id']: [g]}
+        if g.attribute['gene_id'] not in result[g.seqname]:
+            result[g.seqname][g.attribute['gene_id']] = [g]
+        else:
+            result[g.seqname][g.attribute['gene_id']].append(g)
     for chrom in result:
         for gene in result[chrom]:
             result[chrom][gene].sort(key=lambda x: x.start)
@@ -124,7 +139,8 @@ def groupNoMergeGTF(gtf):
 parser = argparse.ArgumentParser(description='')
 
 parser.add_argument('kleat', nargs='+', help='Kleat files')
-parser.add_argument('annotation', help='GTF annotation file. Must have "UTR" feature for every gene')
+parser.add_argument('ensembl', help='GTF annotation file for ensembl. Must have "UTR" feature for every gene')
+parser.add_argument('aceview', help='GTF annotation file for aceview. Must have "UTR" feature for every gene')
 parser.add_argument('summary', help='Summary file for CCLE data')
 parser.add_argument('-x', '--min_novel_distance', type=int, default=20, help='The minimum distance between a cleavage site and an annotated transcript for the site to be deemed novel. Default = 20')
 parser.add_argument('-d', '--max_dist_ann', type=int, default=float('inf'), help='Maximum distance from annotated site. Default = infinity')
@@ -143,6 +159,7 @@ if not os.path.isdir(args.outdir):
     os.makedirs(args.outdir)
 
 kleats = []
+annots = []
 
 # Parse KLEAT data
 N = len(args.kleat)
@@ -167,14 +184,24 @@ sprint('Grouping kleat data ...')
 kleats = groupKleat(kleats)
 print 'DONE'
 
-# Parse GTF
-sprint('Parsing GTF annotation ...')
-gtf = parseGTF(args.annotation, seqnames=set(['chr' + str(x) for x in range(1,24)] + ['X', 'Y']), sources=set(['protein_coding','retained_intron']), features=set(['transcript']))
+# Parse ensembl
+sprint('Parsing ensembl annotation ...')
+ensembl = parseGTF(args.ensembl, seqnames=set(['chr' + str(x) for x in range(1,24)] + ['X', 'Y']), sources=set(['protein_coding','retained_intron']), features=set(['transcript']))
 print 'DONE'
 
-# Group GTF
-sprint('Grouping GTF data ...')
-ggtf = groupNoMergeGTF(gtf)
+# Parse aceview
+sprint('Parsing aceview annotation ...')
+aceview = parseGTF(args.aceview, seqnames=set(['chr' + str(x) for x in range(1,24)] + ['X', 'Y']))
+print 'DONE'
+
+# Group ensembl
+sprint('Grouping ensembl data ...')
+gensembl = groupEnsemblGTF(ensembl)
+print 'DONE'
+
+# Group aceview
+sprint('Grouping aceview data ...')
+ggtf = groupAceviewGTF(aceview, gensembl)
 print 'DONE'
 
 # Parse summary file
