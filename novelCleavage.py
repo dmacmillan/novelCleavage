@@ -68,8 +68,11 @@ def findNovelCleavageEvents(kleats_grouped, all_annotations, window=20, cutoff=5
                     # find closest site
                     add = window
                     while not potentials and add <= cutoff:
-                        potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window-add, site+window+add) if g.strand == strand and g.feature == 'exon']
-                        add += window
+                        try:
+                            potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window-add, site+window+add) if g.strand == strand and g.feature == 'exon']
+                            add += window
+                        except ValueError:
+                            continue
                     if not potentials:
                         results.append([kg[chrom][gene][i], None, None])
                         continue
