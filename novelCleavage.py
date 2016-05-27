@@ -1,3 +1,4 @@
+import pysam
 import argparse, os, sys
 from bisect import bisect_left
 from Kleat import *
@@ -41,21 +42,50 @@ def groupBy(group, att):
 					transcripts[tid].append(x)
 			group[c][g] = transcripts
 
-def findNovelCleavageEvents(kleats_grouped, pos, neg, distance=20):
+def findNovelCleavageEvents(kleats_grouped, all_annotations, window=20, cutoff=5000):
     results = []
     kg = kleats_grouped
+    aa = all_annotations
     for chrom in kg:
         for gene in kg[chrom]:
             sites = [x.cleavage_site for x in kg[chrom][gene]]
             strand = kg[chrom][gene][0].transcript_strand
             for i,site in enumerate(sites):
-                if strand == '+':
-                    my_min = abs(site - pos[minDistanceBinarySearch([x.end for x in pos], site)].end)
-                    closest_utr = pos[i]
-                else:
-                    my_min = abs(site - neg[minDistanceBinarySearch([x.start for x in neg], site)].start)
-                    closest_utr = neg[i]
-                if my_min > distance:
+                potentials = []
+                for ann in all_annotations:
+                    try:
+                        potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window, site+window) if g.strand == strand and g.feature == 'exon']
+                    except ValueError:
+                        continue
+                if not potentials:
+#                    print '^'*20
+#                    print 'Cleavage event:'
+#                    print kg[chrom][gene][i]
+#                    print 'i:'
+#                    print i
+#                    print 'Site:'
+#                    print site
+                    # find closest site
+                    add = window
+                    while not potentials and add <= cutoff:
+                        potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window-add, site+window+add) if g.strand == strand and g.feature == 'exon']
+                        add += window
+                    if not potentials:
+                        results.append([kg[chrom][gene][i], None, None])
+                        continue
+                    if strand == '+':
+                        my_min, idx = min([abs(site - val.end), idx] for [idx, val] in enumerate(potentials))
+                    else:
+                        my_min, idx = min([abs(site - val.start), idx] for [idx, val] in enumerate(potentials))
+                    closest_utr = potentials[idx]
+#                    print 'Potentials:'
+#                    for x in potentials:
+#                        print x
+#                    print 'Closest UTR:'
+#                    print closest_utr
+#                    print 'my_min:'
+#                    print my_min
+                    #if my_min > window:
                     results.append([kg[chrom][gene][i], closest_utr, my_min])
     return results
 
@@ -84,10 +114,6 @@ if not os.path.isdir(args.outdir):
     os.makedirs(args.outdir)
 
 kleats = []
-annots = []
-
-pos = []
-neg = []
 
 # Parse KLEAT data
 N = len(args.kleat)
@@ -108,86 +134,26 @@ kleats = Kleat.groupKleat(kleats)
 print 'DONE'
 
 # Parse ensembl
-sprint('Parsing ensembl annotation ...')
-ensembl = parseGTF('/projects/dmacmillanprj2/polya/ccle/novel_cleavage_events/ensembl.Homo_sapiens.GRCh37.75.gtf', clean=True, seqnames=set(['chr' + str(x) for x in range(1,24)] + ['X', 'Y']), sources=set(['protein_coding','retained_intron']), features=set(['transcript']))
+sprint('Loading ensembl annotation ...')
+ensembl = pysam.TabixFile(args.ensembl, parser=pysam.asGTF())
 print 'DONE'
 
 # Parse aceview
-sprint('Parsing aceview annotation ...')
-aceview = parseGTF('/projects/dmacmillanprj2/polya/ccle/novel_cleavage_events/AceView.ncbi_37.genes_gff.gff', features=['exon'], seqnames=set(['chr' + str(x) for x in range(1,24)] + ['X', 'Y']))
+sprint('Loading aceview annotation ...')
+aceview = pysam.TabixFile(args.aceview, parser=pysam.asGTF())
 print 'DONE'
 
 # Parse refseq
-sprint('Parsing refseq annotation ...')
-refseq = parseGTF('/projects/dmacmillanprj2/polya/ccle/novel_cleavage_events/refseq.gtf.fixed.gz', gzipped=True, add_chr=False, features=['exon'])
+sprint('Loading refseq annotation ...')
+refseq = pysam.TabixFile(args.refseq, parser=pysam.asGTF())
 print 'DONE'
 
 # Parse ucsc
-sprint('Parsing ucsc annotation ...')
-ucsc = parseGTF('/projects/dmacmillanprj2/polya/ccle/novel_cleavage_events/ucsc.gtf.fixed.gz', gzipped=True, add_chr=False, features=['exon'])
+sprint('Loading ucsc annotation ...')
+ucsc = pysam.TabixFile(args.ucsc, parser=pysam.asGTF())
 print 'DONE'
 
-pos = []
-neg = []
-
-# Group ensembl
-sprint('Grouping ensembl data ...')
-gensembl = groupGTF(ensembl)
-print 'DONE'
-
-for c in gensembl:
-    for g in gensembl[c]:
-		for x in gensembl[c][g]:
-			strand = x.strand
-			if strand == '+':
-				pos.append(x)
-			else:
-				neg.append(x)
-
-# Group aceview
-sprint('Grouping aceview data ...')
-gaceview = groupGTF(aceview, group_by='gene_id', sort_stranded=True)
-groupBy(gaceview, 'transcript_id')
-print 'DONE'
-
-for c in gaceview:
-	for g in gaceview[c]:
-		for t in gaceview[c][g]:
-			strand = gaceview[c][g][t][0].strand
-			if strand == '+':
-				pos.append(gaceview[c][g][t][-1])
-			else:
-				neg.append(gaceview[c][g][t][0])
-
-# Group refseq
-sprint('Grouping refseq data ...')
-grefseq = groupGTF(refseq, group_by='gene_name', sort_stranded=True)
-groupBy(grefseq, 'transcript_id')
-print 'DONE'
-
-for c in grefseq:
-	for g in grefseq[c]:
-		for t in grefseq[c][g]:
-			strand = grefseq[c][g][t][0].strand
-			if strand == '+':
-				pos.append(grefseq[c][g][t][-1])
-			else:
-				neg.append(grefseq[c][g][t][0])
-
-# Group ucsc
-sprint('Grouping UCSC data ...')
-gucsc = groupGTF(ucsc, group_by='gene_name', sort_stranded=True)
-groupBy(gucsc, 'transcript_id')
-print 'DONE'
-
-for c in gucsc:
-	for g in gucsc[c]:
-		for t in gucsc[c][g]:
-			strand = gucsc[c][g][t][0].strand
-			if strand == '+':
-				pos.append(gucsc[c][g][t][-1])
-			else:
-				neg.append(gucsc[c][g][t][0])
+all_annotations = [ensembl, aceview, refseq, ucsc]
 
 # Parse summary file
 sprint('Parsing summary file ...')
@@ -196,7 +162,7 @@ print 'DONE'
 
 # Find novel sites
 sprint('Finding novel sites ...')
-sites = findNovelCleavageEvents(kleats, pos, neg, distance=args.min_novel_distance)
+sites = findNovelCleavageEvents(kleats, all_annotations, window=args.min_novel_distance)
 print 'DONE'
 
 outfile = os.path.join(args.outdir, args.name)
@@ -205,5 +171,8 @@ sprint('Writing to: {} ...'.format(outfile))
 with open(outfile, 'w') as o:
     o.write(('\t').join(['ID','CELL_LINE','TISSUE','DISEASE','CHROM','GENE','CLEAVAGE_SITE','GENE_START','GENE_END','TRANSCRIPT_ID','STRAND','DISTANCE']) + '\n')
     for clv_evnt, utr, my_min in sites:
-        o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], utr.seqname, clv_evnt.gene, clv_evnt.cleavage_site, utr.start, utr.end, utr.attribute['transcript_id'] ,utr.strand, my_min]]) + '\n')
+        if not utr:
+            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], 'NA', clv_evnt.gene, clv_evnt.cleavage_site, 'NA', 'NA', 'NA', 'NA', 'NA']]) + '\n')
+        else:
+            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], utr.contig, clv_evnt.gene, clv_evnt.cleavage_site, utr.start, utr.end, utr.asDict()['transcript_id'], utr.strand, my_min]]) + '\n')
 print 'DONE'
