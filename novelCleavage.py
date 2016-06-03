@@ -52,44 +52,31 @@ def findNovelCleavageEvents(kleats_grouped, all_annotations, window=20, cutoff=5
             strand = kg[chrom][gene][0].transcript_strand
             for i,site in enumerate(sites):
                 potentials = []
+                closest_utr = my_min = None
                 for ann in all_annotations:
                     try:
                         potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window, site+window) if g.strand == strand and g.feature == 'exon']
                     except ValueError:
                         continue
                 if not potentials:
-#                    print '^'*20
-#                    print 'Cleavage event:'
-#                    print kg[chrom][gene][i]
-#                    print 'i:'
-#                    print i
-#                    print 'Site:'
-#                    print site
-                    # find closest site
-                    add = window
+                    add = 0
                     while not potentials and add <= cutoff:
+                        add += window
                         try:
                             potentials += [g for g in ann.fetch(kg[chrom][gene][i].chromosome, site-window-add, site+window+add) if g.strand == strand and g.feature == 'exon']
-                            add += window
                         except ValueError:
                             continue
                     if not potentials:
                         results.append([kg[chrom][gene][i], None, None])
                         continue
-                    if strand == '+':
-                        my_min, idx = min([abs(site - val.end), idx] for [idx, val] in enumerate(potentials))
-                    else:
-                        my_min, idx = min([abs(site - val.start), idx] for [idx, val] in enumerate(potentials))
-                    closest_utr = potentials[idx]
-#                    print 'Potentials:'
-#                    for x in potentials:
-#                        print x
-#                    print 'Closest UTR:'
-#                    print closest_utr
-#                    print 'my_min:'
-#                    print my_min
-                    #if my_min > window:
-                    results.append([kg[chrom][gene][i], closest_utr, my_min])
+                if strand == '+':
+                    my_min, idx = min([abs(site - val.end), idx] for [idx, val] in enumerate(potentials))
+                else:
+                    my_min, idx = min([abs(site - val.start), idx] for [idx, val] in enumerate(potentials))
+                closest_utr = potentials[idx]
+                if my_min <= window:
+                    continue
+                results.append([kg[chrom][gene][i], closest_utr, my_min])
     return results
 
 parser = argparse.ArgumentParser(description='')
@@ -172,10 +159,13 @@ outfile = os.path.join(args.outdir, args.name)
 
 sprint('Writing to: {} ...'.format(outfile))
 with open(outfile, 'w') as o:
-    o.write(('\t').join(['ID','CELL_LINE','TISSUE','DISEASE','CHROM','GENE','CLEAVAGE_SITE','GENE_START','GENE_END','TRANSCRIPT_ID','STRAND','DISTANCE']) + '\n')
+    o.write(('\t').join(['ID','CELL_LINE','TISSUE','DISEASE','CHROM','GENE','CLEAVAGE_SITE','UTR_START','UTR_END','TRANSCRIPT_ID','STRAND','DISTANCE', 'WITHIN_UTR', 'PAS', 'LEN_CONTIG_TAIL', 'NUM_TAIL_READS', 'NUM_BRIDGE_READS', 'MAX_LEN_BRIDGE_READ']) + '\n')
     for clv_evnt, utr, my_min in sites:
         if not utr:
-            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], 'NA', clv_evnt.gene, clv_evnt.cleavage_site, 'NA', 'NA', 'NA', 'NA', 'NA']]) + '\n')
+            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], clv_evnt.chromosome, clv_evnt.gene, clv_evnt.cleavage_site, 'NA', 'NA', 'NA', 'NA', 'NA', 'NA', clv_evnt.pas, clv_evnt.length_of_tail_in_contig, clv_evnt.number_of_tail_reads, clv_evnt.number_of_bridge_reads, clv_evnt.max_bridge_read_tail_length]]) + '\n')
         else:
-            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], utr.contig, clv_evnt.gene, clv_evnt.cleavage_site, utr.start, utr.end, utr.asDict()['transcript_id'], utr.strand, my_min]]) + '\n')
+            within_utr = False
+            if utr.start <= clv_evnt.cleavage_site <= utr.end:
+                within_utr = True
+            o.write(('\t').join([str(x) for x in [clv_evnt.ID, summary[clv_evnt.ID][0], summary[clv_evnt.ID][1], summary[clv_evnt.ID][2], utr.contig, clv_evnt.gene, clv_evnt.cleavage_site, utr.start, utr.end, utr.asDict()['transcript_id'], utr.strand, my_min, within_utr, clv_evnt.pas, clv_evnt.length_of_tail_in_contig, clv_evnt.number_of_tail_reads, clv_evnt.number_of_bridge_reads, clv_evnt.max_bridge_read_tail_length]]) + '\n')
 print 'DONE'
